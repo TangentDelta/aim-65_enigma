@@ -1,0 +1,322 @@
+;Zero-page defines
+ROT_R = $40     ;Rotor 3 rotation
+ROT_M = $41     ;Rotor 2 rotation
+ROT_L = $42     ;Rotor 1 rotation
+
+TEMP_LETTER = $44
+
+;System routine defines
+OUTCH = $E97A   ;AIM-65 "OUTPUT" routine
+INCH = $E93C    ;AIM-65 "READ" routine
+;OUTCH = ECHO
+;INCH = GETCHAR
+
+.segment "RAM_CODE"
+START:
+  jsr PRINT_MESSAGE
+  lda #$00
+  sta ROT_R
+  sta ROT_M
+  sta ROT_L
+TOP:
+  jsr INCH
+
+  cmp #$0d
+  beq MAIN_LOOP_END
+  ;jsr CRLF
+
+  jsr UPPER
+  sec
+  sbc #$41  ;Convert [A-Z] to range from 0 to 25
+  clc
+
+  jsr ENIGMA
+
+  clc
+  adc #$41  ;Convert back to ASCII
+
+  MAIN_LOOP_END:
+  jsr OUTCH
+  jmp TOP
+
+ENIGMA:
+  pha
+  jsr STEP_ROTORS
+  pla
+
+  jsr ROTORSIM_R_FORWARD
+  jsr ROTORSIM_M_FORWARD
+  jsr ROTORSIM_L_FORWARD
+
+  ;Reflector
+  tax
+  lda REFLECTOR_B,X
+  ;jsr DEBUG
+
+  jsr ROTORSIM_L_BACKWARD
+  jsr ROTORSIM_M_BACKWARD
+  jsr ROTORSIM_R_BACKWARD
+
+  rts
+
+;Rotor simulations
+ROTORSIM_R_FORWARD:
+  ;Right-most rotor forward wiring simulation
+  clc              ;Add rotor rotation to letter
+  adc ROT_R
+  jsr MOD_26
+
+  tax
+  lda ROTOR_III,X    ;Letter translation
+  sta TEMP_LETTER
+
+  lda #26          ;Subtract rotor rotation from letter
+  sec
+  sbc ROT_R
+  clc
+  adc TEMP_LETTER
+  jsr MOD_26
+
+  rts
+
+ROTORSIM_R_BACKWARD:
+  ;Right-most rotor backward wiring simulation
+  clc              ;Add rotor rotation to letter
+  adc ROT_R
+  jsr MOD_26
+
+  tax              ;Letter translation
+  lda ROTOR_III+26,X ;Use backwards-facing wiring table
+  sta TEMP_LETTER
+
+  lda #26          ;Subtract rotor rotation from letter
+  sec
+  sbc ROT_R
+  clc
+  adc TEMP_LETTER
+  jsr MOD_26
+
+  rts
+
+;Rotor simulations
+ROTORSIM_M_FORWARD:
+  ;Middle rotor forward wiring simulation
+  clc              ;Add rotor rotation to letter
+  adc ROT_M
+  jsr MOD_26
+
+  tax
+  lda ROTOR_II,X    ;Letter translation
+  sta TEMP_LETTER
+
+  lda #26          ;Subtract rotor rotation from letter
+  sec
+  sbc ROT_M
+  clc
+  adc TEMP_LETTER
+  jsr MOD_26
+
+  rts
+
+ROTORSIM_M_BACKWARD:
+  ;Middle rotor backward wiring simulation
+  clc              ;Add rotor rotation to letter
+  adc ROT_M
+  jsr MOD_26
+
+  tax              ;Letter translation
+  lda ROTOR_II+26,X ;Use backwards-facing wiring table
+  sta TEMP_LETTER
+
+  lda #26          ;Subtract rotor rotation from letter
+  sec
+  sbc ROT_M
+  clc
+  adc TEMP_LETTER
+  jsr MOD_26
+
+  rts
+
+;Rotor simulations
+ROTORSIM_L_FORWARD:
+  ;Left-most rotor forward wiring simulation
+  clc              ;Add rotor rotation to letter
+  adc ROT_L
+  jsr MOD_26
+
+  tax
+  lda ROTOR_I,X    ;Letter translation
+  sta TEMP_LETTER
+
+  lda #26          ;Subtract rotor rotation from letter
+  sec
+  sbc ROT_L
+  clc
+  adc TEMP_LETTER
+  jsr MOD_26
+
+  rts
+
+ROTORSIM_L_BACKWARD:
+  ;Left-most rotor backward wiring simulation
+  clc              ;Add rotor rotation to letter
+  adc ROT_L
+  jsr MOD_26
+
+  tax              ;Letter translation
+  lda ROTOR_I+26,X ;Use backwards-facing wiring table
+  sta TEMP_LETTER
+
+  lda #26          ;Subtract rotor rotation from letter
+  sec
+  sbc ROT_L
+  clc
+  adc TEMP_LETTER
+  jsr MOD_26
+
+  rts
+
+STEP_ROTORS:
+  ;Right-most rotor stepping
+  STEP_RIGHT:
+  inc ROT_R
+
+  lda ROTOR_III_TURN  ;At turn position?
+  cmp ROT_R
+  beq STEP_MID        ;Step the next rotor
+
+  lda #26             ;Has rotor completed a full revolution?
+  cmp ROT_R
+  bne STEP_END
+
+  lda #00
+  sta ROT_R
+  
+  STEP_END:
+  rts
+
+  ;Middle rotor stepping
+  STEP_MID:
+  inc ROT_M
+
+  lda ROTOR_II_TURN
+  cmp ROT_M
+  beq STEP_LEFT
+
+  lda #26
+  cmp ROT_M
+  bne STEP_END
+
+  lda #00
+  sta ROT_M
+
+  rts
+
+  ;Left-most rotor stepping
+  STEP_LEFT:
+  inc ROT_L
+
+  lda #26
+  cmp ROT_L
+  bne STEP_END
+
+  lda #00
+  sta ROT_L
+
+  rts
+
+;Misc. utility routines
+UPPER:
+  cmp #$61
+  bcc UP_TOO_LOW
+  cmp #$7b
+  bcs UP_INVALID
+
+  sec
+  sbc #$20
+  
+  UP_TOO_LOW:
+  cmp #$41
+  bcc UP_INVALID
+  cmp #$5b
+  bcs UP_INVALID
+  rts
+
+  UP_INVALID:
+  lda #$41
+  rts
+
+;Used for debugging
+DEBUG:
+  pha
+  lda #'('
+  jsr OUTCH
+  pla
+  pha
+  clc
+  adc #$41
+  jsr OUTCH
+  lda #')'
+  jsr OUTCH
+  pla
+
+  rts
+
+;Perform a modulo 26 operation on the contents of the accumulator
+MOD_26:
+  sec
+  MOD_LOOP:
+  sbc #26  ;$f8
+  bcs MOD_LOOP
+  adc #26  ;
+  rts
+
+;System Routines
+PRINT_MESSAGE:
+  ldx #$00
+  PRINT_LOOP:
+  lda MESSAGE,X
+  beq PRINT_END
+  jsr OUTCH
+  inx
+  jmp PRINT_LOOP
+
+  PRINT_END:
+  rts
+
+
+
+;Enigma rotor wiring tables
+ROTOR_I:
+  .byte 4, 10, 12, 5, 11, 6, 3, 16, 21, 25, 13, 19, 14, 22, 24, 7, 23, 20, 18, 15, 0, 8, 1, 17, 2, 9 ;EKMFLGDQVZNTOWYHXUSPAIBRCJ
+  .byte 20, 22, 24, 6, 0, 3, 5, 15, 21, 25, 1, 4, 2, 10, 12, 19, 7, 23, 18, 11, 17, 8, 13, 16, 14, 9
+  ROTOR_I_TURN: ;When the rotor turns over
+  .byte 17 ;R
+ROTOR_II:
+  .byte 0, 9, 3, 10, 18, 8, 17, 20, 23, 1, 11, 7, 22, 19, 12, 2, 16, 6, 25, 13, 15, 24, 5, 21, 14, 4 ;AJDKSIRUXBLHWTMCQGZNPYFVOE;
+  .byte 0, 9, 15, 2, 25, 22, 17, 11, 5, 1, 3, 10, 14, 19, 24, 20, 16, 6, 4, 13, 7, 23, 12, 8, 21, 18
+  ROTOR_II_TURN:
+  .byte 5 ;F
+ROTOR_III:
+  .byte 1, 3, 5, 7, 9, 11, 2, 15, 17, 19, 23, 21, 25, 13, 24, 4, 8, 22, 6, 0, 10, 12, 20, 18, 16, 14 ;BDFHJLCPRTXVZNYEIWGAKMUSQO
+  .byte 19, 0, 6, 1, 15, 2, 18, 3, 16, 4, 20, 5, 21, 13, 25, 7, 24, 8, 23, 9, 22, 11, 17, 10, 14, 12
+  ROTOR_III_TURN:
+  .byte 22 ;W
+
+REFLECTOR_A:
+  .byte 4,9,12,25,0,11,24,23,21,1,22,5,2,17,16,20,14,13,19,18,15,8,10,7,6,3 ;EJMZALYXVBWFCRQUONTSPIKHGD
+REFLECTOR_B:
+  .byte 24, 17, 20, 7, 16, 18, 11, 3, 15, 23, 13, 6, 14, 10, 12, 8, 4, 1, 5, 25, 2, 22, 21, 9, 0, 19 ;YRUHQSLDPXNGOKMIEBFZCWVJAT
+REFLECTOR_C:
+  .byte "FVPJIAOYEDRZXWGCTKUQSBNMHL"
+
+ROTOR_TEST:
+  .byte 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ;ABCDEFGHIJKLMNOPQRSTUVWXYZ
+ROTOR_TEST_II:
+  .byte 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+
+MESSAGE:
+  .byte "ENIGMA SIMULATOR",$0d
+  .byte "BY TANGENTDELTA",$0d
+  .byte "VERSION 0.1"
+  .byte 0
